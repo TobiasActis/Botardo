@@ -44,7 +44,7 @@ class BacktestEngine:
         
         # Tracking de trades
         self.trades: List[Dict] = []
-        self.open_position: Optional[Dict] = None
+        self.current_position: Optional[Dict] = None  # Renombrado de open_position
         self.equity_curve: List[float] = [initial_balance]
         
         # Métricas
@@ -55,18 +55,30 @@ class BacktestEngine:
     def calculate_position_size(
         self,
         entry_price: float,
-        stop_loss: float
+        stop_loss: float,
+        max_loss_override: float = None
     ) -> tuple[float, int]:
-        """Calcula tamaño de posición y leverage"""
-        risk_amount = self.balance * self.risk_per_trade
+        """Calcula tamaño de posición y leverage con límite de pérdida"""
+        # Límite de pérdida máxima
+        max_loss = max_loss_override if max_loss_override else (self.balance * self.risk_per_trade)
+        
+        risk_amount = min(self.balance * self.risk_per_trade, max_loss)
         stop_distance = abs(entry_price - stop_loss) / entry_price
         
-        # Leverage óptimo
+        # Leverage óptimo basado en distancia al stop
         leverage = min(int(1 / stop_distance), self.max_leverage)
         leverage = max(1, leverage)
         
-        # Cantidad en USDT
-        position_value = risk_amount / stop_distance
+        # Valor máximo de posición considerando leverage
+        max_position_value = self.balance * leverage
+        
+        # Valor de posición basado en riesgo LIMITADO
+        risk_based_position = risk_amount / stop_distance
+        
+        # Usar el menor entre ambos para no sobre-apalancarse
+        position_value = min(risk_based_position, max_position_value)
+        
+        # Cantidad en BTC
         quantity = position_value / entry_price
         
         return quantity, leverage
@@ -81,7 +93,7 @@ class BacktestEngine:
         signal_info: Dict
     ):
         """Abre una nueva posición"""
-        if self.open_position is not None:
+        if self.current_position is not None:
             logger.warning("Position already open, skipping new signal")
             return
         
@@ -91,7 +103,7 @@ class BacktestEngine:
         # Calcular comisión de entrada
         entry_commission = position_value * self.commission
         
-        self.open_position = {
+        self.current_position = {
             'entry_time': timestamp,
             'side': side,
             'entry_price': entry_price,
@@ -114,10 +126,10 @@ class BacktestEngine:
         Verifica si la posición debe cerrarse
         Returns True si se cerró la posición
         """
-        if self.open_position is None:
+        if self.current_position is None:
             return False
         
-        pos = self.open_position
+        pos = self.current_position
         current_price = current_bar['close']
         high = current_bar['high']
         low = current_bar['low']
@@ -163,10 +175,10 @@ class BacktestEngine:
         exit_reason: str
     ):
         """Cierra la posición actual"""
-        if self.open_position is None:
+        if self.current_position is None:
             return
         
-        pos = self.open_position
+        pos = self.current_position
         
         # Calcular P&L
         if pos['side'] == 'LONG':
@@ -220,7 +232,7 @@ class BacktestEngine:
             logger.info(f"❌ Trade closed: ${pnl_usdt:.2f} ({pnl_pct*100:.2f}%) - {exit_reason}")
         
         # Limpiar posición
-        self.open_position = None
+        self.current_position = None
     
     def run_backtest(
         self,
@@ -263,11 +275,11 @@ class BacktestEngine:
             wyckoff.load_data('1d', data_1d[data_1d.index <= current_time].tail(50))
             
             # Verificar posición abierta
-            if self.open_position:
+            if self.current_position:
                 self.check_position(current_bar)
             
             # Si no hay posición, buscar señal
-            if self.open_position is None:
+            if self.current_position is None:
                 # Analizar cada 4 horas para no saturar
                 if i % 4 == 0:
                     wyckoff.analyze_all_timeframes()
@@ -284,7 +296,7 @@ class BacktestEngine:
                         )
         
         # Cerrar posición abierta al final
-        if self.open_position:
+        if self.current_position:
             last_bar = data_1h.iloc[-1]
             self.close_position(
                 timestamp=last_bar.name,
@@ -312,25 +324,77 @@ class BacktestEngine:
         
         profit_factor = abs(avg_win * self.winning_trades / (avg_loss * self.losing_trades)) if avg_loss != 0 else 0
         
-        print("\n" + "="*60)
-        print("BACKTEST RESULTS")
-        print("="*60)
-        print(f"Initial Balance: ${self.initial_balance:,.2f}")
-        print(f"Final Balance: ${self.balance:,.2f}")
-        print(f"Total P&L: ${total_pnl:,.2f} ({total_return:.2f}%)")
-        print("-"*60)
-        print(f"Total Trades: {self.total_trades}")
-        print(f"Winning Trades: {self.winning_trades}")
-        print(f"Losing Trades: {self.losing_trades}")
-        print(f"Win Rate: {win_rate:.2f}%")
-        print("-"*60)
-        print(f"Average Win: ${avg_win:.2f}")
-        print(f"Average Loss: ${avg_loss:.2f}")
-        print(f"Profit Factor: {profit_factor:.2f}")
-        print("-"*60)
-        print(f"Max Drawdown: {self.calculate_max_drawdown():.2f}%")
-        print(f"Sharpe Ratio: {self.calculate_sharpe_ratio():.2f}")
-        print("="*60 + "\n")
+        # Calcular expectativa
+        expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
+        
+        # Trade más grande
+        best_trade = trades_df['pnl_usdt'].max()
+        worst_trade = trades_df['pnl_usdt'].min()
+        
+        # Duración promedio
+        if 'duration' in trades_df.columns:
+            avg_duration = trades_df['duration'].mean()
+            # Convertir Timedelta a horas si es necesario
+            if hasattr(avg_duration, 'total_seconds'):
+                avg_duration_hours = avg_duration.total_seconds() / 3600
+            else:
+                avg_duration_hours = avg_duration
+        else:
+            avg_duration_hours = 0
+        
+        # Racha ganadora/perdedora
+        winning_streak = 0
+        losing_streak = 0
+        current_win_streak = 0
+        current_loss_streak = 0
+        
+        for pnl in trades_df['pnl_usdt']:
+            if pnl > 0:
+                current_win_streak += 1
+                current_loss_streak = 0
+                winning_streak = max(winning_streak, current_win_streak)
+            else:
+                current_loss_streak += 1
+                current_win_streak = 0
+                losing_streak = max(losing_streak, current_loss_streak)
+        
+        print("\n" + "="*70)
+        print("📊 BACKTEST RESULTS - HYBRID STRATEGY (Wyckoff + SMC)")
+        print("="*70)
+        print(f"💰 Initial Balance:    ${self.initial_balance:>12,.2f}")
+        print(f"💵 Final Balance:      ${self.balance:>12,.2f}")
+        print(f"📈 Total P&L:          ${total_pnl:>12,.2f} ({total_return:+.2f}%)")
+        print(f"📉 Max Drawdown:       {self.calculate_max_drawdown():>12.2f}%")
+        print(f"📊 Sharpe Ratio:       {self.calculate_sharpe_ratio():>15.2f}")
+        print("-"*70)
+        print(f"🎯 Total Trades:       {self.total_trades:>15}")
+        print(f"✅ Winning Trades:     {self.winning_trades:>15}")
+        print(f"❌ Losing Trades:      {self.losing_trades:>15}")
+        print(f"🎲 Win Rate:           {win_rate:>14.2f}%")
+        print("-"*70)
+        print(f"💚 Average Win:        ${avg_win:>12,.2f}")
+        print(f"💔 Average Loss:       ${avg_loss:>12,.2f}")
+        print(f"🏆 Best Trade:         ${best_trade:>12,.2f}")
+        print(f"💥 Worst Trade:        ${worst_trade:>12,.2f}")
+        print(f"🎰 Profit Factor:      {profit_factor:>15.2f}")
+        print(f"💎 Expectancy:         ${expectancy:>12,.2f}")
+        print("-"*70)
+        print(f"🔥 Max Win Streak:     {winning_streak:>15}")
+        print(f"❄️  Max Loss Streak:    {losing_streak:>15}")
+        if avg_duration_hours > 0:
+            print(f"⏱️  Avg Duration:       {avg_duration_hours:>12.1f} hours")
+        print("="*70 + "\n")
+        
+        # Mostrar breakdown por tipo de señal si está disponible
+        if 'signal_info' in trades_df.columns:
+            print("📋 TRADE BREAKDOWN BY SIGNAL TYPE:")
+            print("-"*70)
+            for idx, trade in trades_df.iterrows():
+                signal_info = trade.get('signal_info', {})
+                reasons = signal_info.get('reasons', [])
+                if reasons:
+                    print(f"  Trade {idx+1}: {', '.join(reasons[:2])} -> ${trade['pnl_usdt']:.2f}")
+            print("="*70 + "\n")
     
     def calculate_max_drawdown(self) -> float:
         """Calcula el máximo drawdown"""
@@ -427,10 +491,71 @@ class BacktestEngine:
 
 
 if __name__ == "__main__":
-    # Ejemplo de uso con datos sintéticos
-    logger.info("Backtest Engine Ready")
+    import argparse
     
-    # En producción, cargar datos reales con download_btc_futures_1m.py
-    print("\nPara ejecutar backtest completo:")
-    print("1. Ejecuta: python download_btc_futures_1m.py")
-    print("2. Luego ejecuta este script con datos reales\n")
+    parser = argparse.ArgumentParser(description="Backtest Wyckoff Multi-Timeframe Strategy")
+    parser.add_argument("--data_1m", type=str, required=True, help="Path to 1-minute OHLCV CSV file")
+    parser.add_argument("--start", type=str, default="2024-01-01", help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--end", type=str, default="2025-11-30", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--initial_capital", type=float, default=10000, help="Initial capital in USDT")
+    parser.add_argument("--leverage", type=int, default=5, help="Leverage multiplier")
+    parser.add_argument("--risk_per_trade", type=float, default=0.02, help="Risk per trade (0.02 = 2%)")
+    parser.add_argument("--out", type=str, default="backtest_results", help="Output file prefix")
+    
+    args = parser.parse_args()
+    
+    logger.info(f"Loading data from {args.data_1m}...")
+    df_1m = pd.read_csv(args.data_1m, parse_dates=["timestamp"], index_col="timestamp")
+    
+    # Filter by date range
+    df_1m = df_1m.loc[args.start:args.end]
+    logger.info(f"Data loaded: {len(df_1m)} 1-minute bars from {df_1m.index[0]} to {df_1m.index[-1]}")
+    
+    # Resample to higher timeframes
+    logger.info("Resampling to 1h...")
+    df_1h = df_1m.resample('1h').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna()
+    
+    logger.info("Resampling to 4h...")
+    df_4h = df_1m.resample('4h').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna()
+    
+    logger.info("Resampling to 1d...")
+    df_1d = df_1m.resample('1D').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna()
+    
+    logger.info(f"Resampled data: {len(df_1h)} 1h bars, {len(df_4h)} 4h bars, {len(df_1d)} 1d bars")
+    
+    # Run backtest
+    logger.info("Starting backtest...")
+    backtest = BacktestEngine(
+        initial_balance=args.initial_capital,
+        risk_per_trade=args.risk_per_trade,
+        max_leverage=args.leverage
+    )
+    
+    backtest.run_backtest(
+        data_1h=df_1h,
+        data_4h=df_4h,
+        data_1d=df_1d,
+        start_date=args.start,
+        end_date=args.end
+    )
+    
+    # Print summary
+    backtest.print_summary()
