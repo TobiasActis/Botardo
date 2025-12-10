@@ -1,0 +1,52 @@
+name: Run Backtest
+
+on:
+  workflow_dispatch:  # Ejecutar manualmente desde GitHub
+  push:
+    branches: [ main ]
+    paths:
+      - '**.py'  # Solo cuando cambies archivos Python
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install pandas numpy matplotlib loguru ta requests python-binance
+    
+    - name: Download data
+      run: |
+        python download_btc_futures_1m.py
+    
+    - name: Run backtest
+      run: |
+        python backtest_superbot.py \
+          --data_1m "data/BTCUSDT_1m_2024-01-01_to_now.csv" \
+          --initial_capital 500 \
+          --risk_per_trade 0.10 \
+          --leverage 50 \
+          --po3_min_rr 3.5 \
+          --smc_standalone 8 \
+          --start "2024-01-01" \
+          --end "2025-12-09"
+    
+    - name: Upload results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: backtest-results
+        path: |
+          superbot_backtest.png
+          superbot_backtest_trades.csv
+          superbot_backtest_metrics.txt
