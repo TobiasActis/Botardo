@@ -97,6 +97,18 @@ class BacktestEngine:
             logger.warning("Position already open, skipping new signal")
             return
         
+        # 🔍 VALIDAR SL/TP ANTES DE ABRIR
+        if side.upper() == 'LONG':
+            if stop_loss >= entry_price:
+                logger.error(f"🚨 BUG: LONG SL={stop_loss:.2f} >= entry={entry_price:.2f}")
+                stop_loss, take_profit = take_profit, stop_loss
+                logger.warning(f"   → SWAP: SL={stop_loss:.2f}, TP={take_profit:.2f}")
+        elif side.upper() == 'SHORT':
+            if stop_loss <= entry_price:
+                logger.error(f"🚨 BUG: SHORT SL={stop_loss:.2f} <= entry={entry_price:.2f}")
+                stop_loss, take_profit = take_profit, stop_loss
+                logger.warning(f"   → SWAP: SL={stop_loss:.2f}, TP={take_profit:.2f}")
+        
         quantity, leverage = self.calculate_position_size(entry_price, stop_loss)
         position_value = quantity * entry_price
         
@@ -143,20 +155,24 @@ class BacktestEngine:
             if low <= pos['stop_loss']:
                 exit_price = pos['stop_loss']
                 exit_reason = 'stop_loss'
+                logger.debug(f"LONG SL hit: low={low:.2f} <= SL={pos['stop_loss']:.2f}")
             # Check take profit
             elif high >= pos['take_profit']:
                 exit_price = pos['take_profit']
                 exit_reason = 'take_profit'
+                logger.debug(f"LONG TP hit: high={high:.2f} >= TP={pos['take_profit']:.2f}")
         
         else:  # SHORT
             # Check stop loss
             if high >= pos['stop_loss']:
                 exit_price = pos['stop_loss']
                 exit_reason = 'stop_loss'
+                logger.debug(f"SHORT SL hit: high={high:.2f} >= SL={pos['stop_loss']:.2f}")
             # Check take profit
             elif low <= pos['take_profit']:
                 exit_price = pos['take_profit']
                 exit_reason = 'take_profit'
+                logger.debug(f"SHORT TP hit: low={low:.2f} <= TP={pos['take_profit']:.2f}")
         
         if exit_price:
             self.close_position(
