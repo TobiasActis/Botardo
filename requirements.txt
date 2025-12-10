@@ -1,22 +1,21 @@
-# Core dependencies
-python-binance==1.0.19
-ccxt>=4.1.0
-pandas>=2.2.0
-numpy>=1.26.0
+# Botardo - Trading Bot Dependencies
 
-# Data analysis and visualization
-matplotlib>=3.8.0
-seaborn>=0.13.0
-plotly>=5.18.0
+# Core
+pandas>=2.0.0
+numpy>=1.24.0
 
-# Technical analysis
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Technical Analysis
 ta>=0.11.0
-pandas-ta>=0.3.14b0
 
-# Environment and configuration
-python-dotenv>=1.0.0
+# Data Download
+python-binance>=1.0.0
+requests>=2.31.0
 
-# Logging and monitoring
+# Logging
 loguru>=0.7.0
 
 # HTTP requests
