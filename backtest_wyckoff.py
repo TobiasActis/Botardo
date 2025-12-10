@@ -150,7 +150,10 @@ class BacktestEngine:
         exit_price = None
         exit_reason = None
         
-        if pos['side'] == 'LONG':
+        # Normalizar side a uppercase para comparación
+        side = pos['side'].upper()
+        
+        if side == 'LONG':
             # Check stop loss
             if low <= pos['stop_loss']:
                 exit_price = pos['stop_loss']
@@ -196,8 +199,15 @@ class BacktestEngine:
         
         pos = self.current_position
         
+        # 🔍 DEBUG: Log de valores críticos
+        logger.debug(f"CLOSE: {pos['side']} | Entry={pos['entry_price']:.2f} | Exit={exit_price:.2f} | Reason={exit_reason}")
+        logger.debug(f"       SL={pos['stop_loss']:.2f} | TP={pos['take_profit']:.2f}")
+        
+        # Normalizar side para cálculos
+        side = pos['side'].upper()
+        
         # Calcular P&L
-        if pos['side'] == 'LONG':
+        if side == 'LONG':
             pnl_pct = (exit_price - pos['entry_price']) / pos['entry_price']
         else:  # SHORT
             pnl_pct = (pos['entry_price'] - exit_price) / pos['entry_price']
