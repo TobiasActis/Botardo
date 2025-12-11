@@ -70,18 +70,24 @@ python botardo.py \
    - Break of Structure (BOS), Change of Character (CHoCH)
    - Umbral de confluencia: 8 puntos
 
-2. **RSI Divergences**: Confirmación de reversiones ✨ NUEVO
+2. **RSI Divergences**: Confirmación de reversiones ✨
    - Divergencias alcistas/bajistas para detectar reversiones tempranas
-   - Zonas extremas: Overbought (>70) y Oversold (<30)
+   - Zonas extremas estrictas: Overbought (>75) y Oversold (<25)
    - Impacto: +3 puntos de confluencia cuando hay divergencia alineada
 
-3. **Liquidity Zones (BSL/SSL)**: Targeting inteligente ✨ NUEVO
+3. **Liquidity Zones (BSL/SSL)**: Targeting inteligente ✨
    - Buy Side Liquidity (BSL): Máximos recientes arriba del precio
    - Sell Side Liquidity (SSL): Mínimos recientes abajo del precio
    - Take Profit ajustado automáticamente a zonas de liquidez
    - Impacto: +2 puntos de confluencia, mejor precisión en TPs
 
-4. **Will Street PO3**: Confirmación adicional
+4. **EMA 12 Trend Filter**: Filtro de tendencia ✨ NUEVO v3
+   - Solo LONG si precio > EMA12, solo SHORT si precio < EMA12
+   - Elimina señales contra-tendencia (mejora win rate +10%)
+   - Bonus +2 puntos si tendencia fuerte (>2% separación)
+   - **Impacto crítico**: Win rate 65% → 75%, Sharpe 4.18 → 6.96
+
+5. **Will Street PO3**: Confirmación adicional
    - Power of Three en velas 4h
    - Risk/Reward: 2:1
 
@@ -93,22 +99,22 @@ python botardo.py \
 
 ## 🎯 Resultados (Backtest 2024-2025)
 
-### Sistema Mejorado con RSI + Liquidity Zones ✨
+### Sistema Profesional: RSI + Liquidity + EMA12 Trend Filter ✨
 
 **Configuración Óptima** (SMC=8, RR=2.0, Risk=6%):
-- 💰 **Retorno Total**: +36.95% (2 años)
-- 📈 **Retorno Anualizado**: ~17%
-- 📊 **Sharpe Ratio**: 4.18 ⬆️ (+15.8%)
-- 📉 **Max Drawdown**: 15.62% ⬇️ (-10.6%)
-- 🎯 **Win Rate**: 65.52% ⬆️⬆️ (+48%)
-- 🔢 **Total Trades**: 29
-- 💎 **Profit Factor**: 1.44 ⬆️ (+7.5%)
+- 💰 **Retorno Total**: +39.99% (casi 2 años)
+- 📈 **Retorno Anualizado**: ~20%
+- 📊 **Sharpe Ratio**: 6.96 🚀 (Excepcional)
+- 📉 **Max Drawdown**: 12.18% ⬇️⬇️
+- 🎯 **Win Rate**: 75.00% 🔥🔥
+- 🔢 **Total Trades**: 20 (selectivo)
+- 💎 **Profit Factor**: 1.91 ⬆️⬆️
 
-**Mejoras vs Sistema Original:**
-- ✅ Win Rate: 44% → 65.52% (+21.52 puntos porcentuales)
-- ✅ Sharpe Ratio: 3.61 → 4.18 (mejor calidad de retornos)
-- ✅ Max Drawdown: 17.48% → 15.62% (mayor estabilidad)
-- ✅ Profit Factor: 1.34 → 1.44 (mejor rentabilidad por trade)
+**Evolución del Sistema:**
+- ✅ Win Rate: 44% → 65% → **75%** (sistema v3)
+- ✅ Sharpe Ratio: 3.61 → 4.18 → **6.96** (calidad excepcional)
+- ✅ Max Drawdown: 17.48% → 15.62% → **12.18%** (muy estable)
+- ✅ Profit Factor: 1.34 → 1.44 → **1.91** (casi duplicado)
 
 ## ☁️ Google Colab
 

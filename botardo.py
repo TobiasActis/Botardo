@@ -496,11 +496,12 @@ class UnifiedStrategy:
     def __init__(self, use_po3: bool = True, use_smc: bool = True,
                  po3_min_rr: float = 4.0, smc_standalone_threshold: int = 8,
                  po3_weight: int = 10, smc_weight: int = 3, smc_rr_ratio: float = 4.0,
-                 use_rsi: bool = True, use_liquidity: bool = True):
+                 use_rsi: bool = True, use_liquidity: bool = True, use_ema_filter: bool = True):
         self.use_po3 = use_po3
         self.use_smc = use_smc
         self.use_rsi = use_rsi
         self.use_liquidity = use_liquidity
+        self.use_ema_filter = use_ema_filter
         self.smc_standalone_threshold = smc_standalone_threshold
         self.po3_weight = po3_weight
         self.smc_weight = smc_weight
@@ -513,7 +514,7 @@ class UnifiedStrategy:
             self.smc = SMCEngine(swing_length=5, fvg_threshold=0.001)
         
         if use_rsi:
-            self.rsi_detector = RSIDivergenceDetector(rsi_period=14, overbought=70, oversold=30)
+            self.rsi_detector = RSIDivergenceDetector(rsi_period=14, overbought=75, oversold=25)
         
         if use_liquidity:
             self.liquidity_zones = LiquidityZones(lookback=20, threshold=0.002)
@@ -521,8 +522,9 @@ class UnifiedStrategy:
         logger.success(f"🤖 SUPERBOT Initialized!")
         logger.info(f"   └─ PO3 Primary: {use_po3} (Min RR: {po3_min_rr}:1)")
         logger.info(f"   └─ SMC Confirm: {use_smc} (Standalone: {smc_standalone_threshold}+ pts, RR: {smc_rr_ratio}:1)")
-        logger.info(f"   └─ RSI Divergence: {use_rsi}")
+        logger.info(f"   └─ RSI Divergence: {use_rsi} (OB: 75, OS: 25)")
         logger.info(f"   └─ Liquidity Zones: {use_liquidity}")
+        logger.info(f"   └─ EMA 12 Trend Filter: {use_ema_filter}")
     
     def get_trading_signal(self, data_dict: Dict[str, pd.DataFrame],
                           current_time: pd.Timestamp, execution_tf: str = '15m') -> Optional[Dict]:
@@ -557,6 +559,26 @@ class UnifiedStrategy:
                 if smc_analysis['confluence_score'] >= self.smc_standalone_threshold:
                     confluence_score = smc_analysis['confluence_score']
                     reasons.append(f"🎯 SMC Signal ({smc_analysis['confluence_score']} pts)")
+                    
+                    # NUEVO: Filtro de tendencia EMA 12
+                    if self.use_ema_filter:
+                        ema12 = df_exec['close'].ewm(span=12, adjust=False).mean().iloc[current_idx]
+                        current_price = df_exec.iloc[current_idx]['close']
+                        
+                        # Filtrar contra-tendencia
+                        if smc_analysis['signal_type'] == 'LONG' and current_price < ema12:
+                            logger.warning(f"   └─ Signal filtered: LONG below EMA12 (Price: ${current_price:.2f}, EMA12: ${ema12:.2f})")
+                            return None
+                        elif smc_analysis['signal_type'] == 'SHORT' and current_price > ema12:
+                            logger.warning(f"   └─ Signal filtered: SHORT above EMA12 (Price: ${current_price:.2f}, EMA12: ${ema12:.2f})")
+                            return None
+                        
+                        # Bonus por fuerte tendencia
+                        price_ema_diff = abs(current_price - ema12) / ema12
+                        if price_ema_diff > 0.02:  # Más de 2% de separación
+                            confluence_score += 2
+                            reasons.append(f"📊 Strong Trend (+2)")
+                            logger.info(f"   └─ Strong trend detected: {price_ema_diff*100:.1f}% from EMA12")
                     
                     # NUEVO: Verificar RSI y Divergencias
                     rsi_bonus = 0
