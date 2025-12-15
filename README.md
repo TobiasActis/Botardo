@@ -2,6 +2,17 @@
 
 Bot de trading automatizado que combina **Smart Money Concepts (SMC)** y **Will Street Power of 3 (PO3)** para operar futuros de criptomonedas.
 
+> ⚠️ **PROYECTO EN DESARROLLO** - Actualmente en fase de optimización. Ver [LESSONS_LEARNED.md](LESSONS_LEARNED.md) para todos los experimentos y lecciones aprendidas.
+
+## 📊 Estado Actual
+
+**Mejor resultado validado**: 
+- **4 trades, 100% WR, +10.91%** (2025-01-01 a 2025-12-10)
+- Configuración: SMC Score ≥9, RR ≥3.0, Risk 4%, Leverage 5x
+- **Problema**: Muy selectivo (solo 4 trades en 11 meses)
+
+**Desafío actual**: Aumentar frecuencia de trades manteniendo alta win rate para lograr 35% anual.
+
 ## 📁 Estructura del Proyecto
 
 ```
@@ -40,14 +51,15 @@ python download_data.py
 
 ### 2. Ejecutar Backtest
 
-**Configuración Óptima (Recomendada):**
+**Configuración Validada (Basada en Testing):**
 ```bash
 python botardo.py \
     --data_1m "data/BTCUSDT_1m_2024-01-01_to_now.csv" \
     --initial_capital 500 \
-    --risk_per_trade 0.06 \
-    --leverage 10 \
-    --smc_rr 2.0 \
+    --risk_per_trade 0.04 \
+    --leverage 5 \
+    --smc_standalone 9 \
+    --smc_rr 3.0 \
     --po3_min_rr 2.0 \
     --start "2024-01-01"
 ```

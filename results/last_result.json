@@ -1,0 +1,21 @@
+{
+  "fecha": "2025-12-15 19:52:52.468709",
+  "capital_inicial": 500.0,
+  "balance_final": 900.9701914115785,
+  "pnl_total": 400.9701914115785,
+  "pnl_pct": 120.57990081530662,
+  "trades": 26,
+  "wins": 20,
+  "losses": 6,
+  "be": 0,
+  "winrate": 76.92307692307693,
+  "profit_factor": 10.12059178896426,
+  "max_drawdown": -1.7313665524683146,
+  "parametros": {
+    "bb_std": 1.5,
+    "rsi_oversold": 30,
+    "rsi_overbought": 70,
+    "sl_pct": 0.015,
+    "tp_multiplier": 2.5
+  }
+}
