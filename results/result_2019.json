@@ -1,0 +1,22 @@
+{
+  "fecha": "2025-12-15 21:07:43.612920",
+  "anio": "2019",
+  "capital_inicial": 500.0,
+  "balance_final": 683.6377130778221,
+  "pnl_total": 183.63771307782213,
+  "pnl_pct": 63.95917078898658,
+  "trades": 14,
+  "wins": 11,
+  "losses": 3,
+  "be": 0,
+  "winrate": 78.57142857142857,
+  "profit_factor": 27.756367931057884,
+  "max_drawdown": -0.88689259299432,
+  "parametros": {
+    "bb_std": 1.5,
+    "rsi_oversold": 30,
+    "rsi_overbought": 70,
+    "sl_pct": 0.015,
+    "tp_multiplier": 2.5
+  }
+}

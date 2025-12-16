@@ -108,35 +108,23 @@ class Botardo:
         return df
     
     def check_long_entry(self, row: pd.Series) -> bool:
-        """Verifica condiciones para LONG"""
-        # 0. Filtro de volatilidad: skip si ATR muy alto o muy bajo
-        if pd.notna(row['atr_ratio']) and (row['atr_ratio'] > self.atr_threshold or row['atr_ratio'] < self.atr_min):
-            return False
-        # 0b. Filtro de vela extrema: evitar operar tras velas de rango >2.0x ATR
-        if pd.notna(row['atr']) and (row['high'] - row['low']) > 2.0 * row['atr']:
-            return False
+        """Verifica condiciones para LONG (versión README_OPTIMO_2025)"""
         # 1. Precio toca banda inferior
         touches_lower = row['close'] <= row['bb_lower'] * 1.002  # 0.2% tolerancia
         # 2. RSI oversold (más extremo)
         rsi_ok = row['rsi'] < self.rsi_oversold
-        # 3. Tendencia alcista fuerte (EMA50 > EMA200 y separación >2%)
-        trend_ok = row['trend'] == 1 and (row['ema50'] - row['ema200']) / row['ema200'] > 0.02
+        # 3. Tendencia alcista (EMA50 > EMA200)
+        trend_ok = row['ema50'] > row['ema200']
         return touches_lower and rsi_ok and trend_ok
     
     def check_short_entry(self, row: pd.Series) -> bool:
-        """Verifica condiciones para SHORT"""
-        # 0. Filtro de volatilidad: skip si ATR muy alto o muy bajo
-        if pd.notna(row['atr_ratio']) and (row['atr_ratio'] > self.atr_threshold or row['atr_ratio'] < self.atr_min):
-            return False
-        # 0b. Filtro de vela extrema: evitar operar tras velas de rango >2.0x ATR
-        if pd.notna(row['atr']) and (row['high'] - row['low']) > 2.0 * row['atr']:
-            return False
+        """Verifica condiciones para SHORT (versión README_OPTIMO_2025)"""
         # 1. Precio toca banda superior
         touches_upper = row['close'] >= row['bb_upper'] * 0.998  # 0.2% tolerancia
         # 2. RSI overbought (más extremo)
         rsi_ok = row['rsi'] > self.rsi_overbought
-        # 3. Tendencia bajista fuerte (EMA50 < EMA200 y separación >2%)
-        trend_ok = row['trend'] == -1 and (row['ema200'] - row['ema50']) / row['ema50'] > 0.02
+        # 3. Tendencia bajista (EMA50 < EMA200)
+        trend_ok = row['ema50'] < row['ema200']
         return touches_upper and rsi_ok and trend_ok
     
     def open_position(self, row: pd.Series, side: str) -> None:

@@ -1,0 +1,58 @@
+{
+  "2019": {
+    "capital_inicial": 500,
+    "balance_final": 727.8986191117489,
+    "trades": 14,
+    "ganadores": 12,
+    "perdedores": 2,
+    "winrate": 85.71428571428571
+  },
+  "2020": {
+    "capital_inicial": 500,
+    "balance_final": 660.0978224514377,
+    "trades": 14,
+    "ganadores": 9,
+    "perdedores": 5,
+    "winrate": 64.28571428571429
+  },
+  "2021": {
+    "capital_inicial": 500,
+    "balance_final": 1548.9572386821624,
+    "trades": 48,
+    "ganadores": 38,
+    "perdedores": 10,
+    "winrate": 79.16666666666667
+  },
+  "2022": {
+    "capital_inicial": 500,
+    "balance_final": 1240.5636440306878,
+    "trades": 38,
+    "ganadores": 30,
+    "perdedores": 8,
+    "winrate": 78.94736842105263
+  },
+  "2023": {
+    "capital_inicial": 500,
+    "balance_final": 572.252351206425,
+    "trades": 6,
+    "ganadores": 4,
+    "perdedores": 2,
+    "winrate": 66.66666666666667
+  },
+  "2024": {
+    "capital_inicial": 500,
+    "balance_final": 566.9520708923113,
+    "trades": 8,
+    "ganadores": 6,
+    "perdedores": 2,
+    "winrate": 75.0
+  },
+  "2025": {
+    "capital_inicial": 500,
+    "balance_final": 758.2411317765282,
+    "trades": 22,
+    "ganadores": 15,
+    "perdedores": 7,
+    "winrate": 68.18181818181819
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "2018": {
+    "fecha": "2025-12-15 21:07:20.484388",
+    "anio": "2018",
+    "capital_inicial": 500.0,
+    "balance_final": 1807.7112173990204,
+    "pnl_total": 1307.7112173990204,
+    "pnl_pct": 264.69649527256104,
+    "trades": 68,
+    "wins": 49,
+    "losses": 19,
+    "be": 0,
+    "winrate": 72.05882352941177,
+    "profit_factor": 5.72537430008042,
+    "max_drawdown": -6.065031459976815,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2019": {
+    "fecha": "2025-12-15 21:07:43.612920",
+    "anio": "2019",
+    "capital_inicial": 500.0,
+    "balance_final": 683.6377130778221,
+    "pnl_total": 183.63771307782213,
+    "pnl_pct": 63.95917078898658,
+    "trades": 14,
+    "wins": 11,
+    "losses": 3,
+    "be": 0,
+    "winrate": 78.57142857142857,
+    "profit_factor": 27.756367931057884,
+    "max_drawdown": -0.88689259299432,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2020": {
+    "fecha": "2025-12-15 21:08:05.818323",
+    "anio": "2020",
+    "capital_inicial": 500.0,
+    "balance_final": 616.9122443034153,
+    "pnl_total": 116.91224430341526,
+    "pnl_pct": 44.627954320483475,
+    "trades": 16,
+    "wins": 10,
+    "losses": 6,
+    "be": 0,
+    "winrate": 62.5,
+    "profit_factor": 2.4874206238142333,
+    "max_drawdown": -9.537779652460381,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2021": {
+    "fecha": "2025-12-15 21:08:30.562525",
+    "anio": "2021",
+    "capital_inicial": 500.0,
+    "balance_final": 784.6954904695267,
+    "pnl_total": 284.6954904695267,
+    "pnl_pct": 93.77410750229777,
+    "trades": 20,
+    "wins": 13,
+    "losses": 7,
+    "be": 0,
+    "winrate": 65.0,
+    "profit_factor": 5.5946942756548514,
+    "max_drawdown": -6.107200313790187,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2022": {
+    "fecha": "2025-12-15 21:08:54.865809",
+    "anio": "2022",
+    "capital_inicial": 500.0,
+    "balance_final": 566.908744995543,
+    "pnl_total": 66.90874499554297,
+    "pnl_pct": 25.733648329251526,
+    "trades": 6,
+    "wins": 4,
+    "losses": 2,
+    "be": 0,
+    "winrate": 66.66666666666666,
+    "profit_factor": 8.958537553006527,
+    "max_drawdown": -1.191184153405662,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2023": {
+    "fecha": "2025-12-15 21:09:18.132780",
+    "anio": "2023",
+    "capital_inicial": 500.0,
+    "balance_final": 518.5722620892244,
+    "pnl_total": 18.57226208922441,
+    "pnl_pct": 7.496559651377762,
+    "trades": 2,
+    "wins": 1,
+    "losses": 1,
+    "be": 0,
+    "winrate": 50.0,
+    "profit_factor": 5.986270095948677,
+    "max_drawdown": -0.7517201743111178,
+    "parametros": {
+      "bb_std": 1.5,
+      "rsi_oversold": 30,
+      "rsi_overbought": 70,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2.5
+    }
+  },
+  "2025": {
+    "fecha": "2025-12-15T22:00:59",
+    "anio": "2025",
+    "capital_inicial": 500.0,
+    "balance_final": 745.98,
+    "pnl_total": 245.98,
+    "pnl_pct": 49.20,
+    "trades": 20,
+    "wins": 14,
+    "losses": 6,
+    "be": 0,
+    "winrate": 70.0,
+    "profit_factor": 7.35,
+    "max_drawdown": -1.90,
+    "parametros": {
+      "bb_std": 2,
+      "rsi_oversold": 20,
+      "rsi_overbought": 80,
+      "sl_pct": 0.015,
+      "tp_multiplier": 2,
+      "timeframe": "45m"
+    }
+  }
+}
