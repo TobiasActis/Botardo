@@ -35,6 +35,8 @@ import argparse
 from datetime import datetime
 from typing import Optional, Tuple
 from loguru import logger
+from binance.client import Client
+import os
 
 logger.remove()
 logger.add(lambda msg: print(msg, end=''), format="{time:HH:mm:ss} | {level: <8} | {message}", level="INFO")
@@ -351,42 +353,70 @@ class Botardo:
         logger.info("="*70)
 
 
+def get_binance_usdt_balance(api_key, api_secret):
+    client = Client(api_key, api_secret)
+    account = client.get_account()
+    for balance in account['balances']:
+        if balance['asset'] == 'USDT':
+            return float(balance['free'])
+    return 0.0
+
+
 def main():
     parser = argparse.ArgumentParser(description='Botardo v1.0 - Mean Reversion Strategy')
     parser.add_argument('--data', required=True, help='Path to CSV data file')
-    parser.add_argument('--capital', type=float, default=500, help='Initial capital')
+    parser.add_argument('--capital', type=float, default=None, help='Initial capital (overridden if --use-binance-balance)')
     parser.add_argument('--risk', type=float, default=0.04, help='Risk per trade (0.04 = 4%)')
     parser.add_argument('--leverage', type=int, default=5, help='Leverage multiplier')
     parser.add_argument('--start', default='2024-01-01', help='Start date YYYY-MM-DD')
     parser.add_argument('--end', default='2024-12-31', help='End date YYYY-MM-DD')
-    
+    parser.add_argument('--assets', type=str, default=None, help='Comma-separated list of assets (ej: BTCUSDT,SOLUSDT,ADAUSDT)')
+    parser.add_argument('--use-binance-balance', action='store_true', help='Use real Binance USDT balance as capital')
+    parser.add_argument('--binance-api-key', type=str, default=None, help='Binance API key')
+    parser.add_argument('--binance-api-secret', type=str, default=None, help='Binance API secret')
     args = parser.parse_args()
-    
-    logger.info("="*70)
-    logger.info("🤖 BOTARDO v1.0")
-    logger.info("="*70)
-    logger.info(f"Capital: ${args.capital} | Riesgo: {args.risk*100}% | Leverage: {args.leverage}x")
-    logger.info("="*70)
-    
-    # Cargar datos
-    logger.info("\n📂 Cargando datos...")
-    df = pd.read_csv(args.data, parse_dates=['timestamp'])
-    df = df[(df['timestamp'] >= args.start) & (df['timestamp'] <= args.end)]
-    logger.info(f"✅ Cargados {len(df)} registros")
-    logger.info(f"   Timeframe: 15 minutos")
-    logger.info(f"   Período: {args.start} - {args.end}")
-    
-    # Crear bot y ejecutar
-    bot = Botardo(capital=args.capital, risk_per_trade=args.risk, leverage=args.leverage)
-    trades_df = bot.run_backtest(df)
-    
-    # Resultados
-    bot.print_results()
-    
-    # Guardar trades
-    if not trades_df.empty:
-        trades_df.to_csv('botardo_trades.csv', index=False)
-        logger.info("\n✅ Trades guardados: botardo_trades.csv")
+
+    # Obtener capital real si se solicita
+    if args.use_binance_balance:
+        api_key = args.binance_api_key or os.getenv('BINANCE_API_KEY')
+        api_secret = args.binance_api_secret or os.getenv('BINANCE_API_SECRET')
+        if not api_key or not api_secret:
+            raise ValueError('Debe proveer --binance-api-key y --binance-api-secret o variables de entorno BINANCE_API_KEY/BINANCE_API_SECRET')
+        capital_total = get_binance_usdt_balance(api_key, api_secret)
+        logger.info(f"Capital real en Binance: ${capital_total:.2f}")
+    else:
+        if args.capital is None:
+            raise ValueError('Debe especificar --capital o --use-binance-balance')
+        capital_total = args.capital
+
+    # Determinar activos y capital por activo
+    if args.assets:
+        asset_list = [a.strip() for a in args.assets.split(',') if a.strip()]
+        n_assets = len(asset_list)
+        if n_assets == 0:
+            raise ValueError("Debe especificar al menos un activo en --assets")
+        capital_per_asset = capital_total / n_assets
+        logger.info(f"Multi-asset: {asset_list} | Capital por activo: ${capital_per_asset:.2f}")
+    else:
+        asset_list = [None]
+        capital_per_asset = capital_total
+
+    # Cargar datos y ejecutar para cada activo
+    for i, asset in enumerate(asset_list):
+        logger.info(f"\n📂 Cargando datos... {asset if asset else ''}")
+        data_path = args.data.replace('SYMBOL', asset) if asset else args.data
+        df = pd.read_csv(data_path, parse_dates=['timestamp'])
+        df = df[(df['timestamp'] >= args.start) & (df['timestamp'] <= args.end)]
+        logger.info(f"✅ Cargados {len(df)} registros")
+        logger.info(f"   Timeframe: 15 minutos")
+        logger.info(f"   Período: {args.start} - {args.end}")
+        bot = Botardo(capital=capital_per_asset, risk_per_trade=args.risk, leverage=args.leverage)
+        trades_df = bot.run_backtest(df)
+        bot.print_results()
+        if not trades_df.empty:
+            out_name = f'botardo_trades_{asset}.csv' if asset else 'botardo_trades.csv'
+            trades_df.to_csv(out_name, index=False)
+            logger.info(f"\n✅ Trades guardados: {out_name}")
 
 
 if __name__ == '__main__':
