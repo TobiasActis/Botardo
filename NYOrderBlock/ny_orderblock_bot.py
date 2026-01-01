@@ -17,131 +17,137 @@ class NYOrderBlockBot:
         df['date'] = df['timestamp_ny'].dt.date
         results = []
         for day, day_df in df.groupby('date'):
-            pre_session = day_df[(day_df['timestamp_ny'].dt.time >= pd.to_datetime('06:45').time()) &
-                                 (day_df['timestamp_ny'].dt.time <= pd.to_datetime('07:30').time())]
-            if pre_session.empty:
-                continue
-            last_candle = pre_session.iloc[-1]
-            is_bullish = last_candle['close'] > last_candle['open']
-            is_bearish = last_candle['close'] < last_candle['open']
-            if is_bearish:
-                entry_level = last_candle['low']
-                sl = last_candle['high'] + 0.0003
-                direction = 'SELL'
-            elif is_bullish:
-                entry_level = last_candle['high']
-                sl = last_candle['low'] - 0.0003
-                direction = 'BUY'
-            else:
-                continue
-            session = day_df[(day_df['timestamp_ny'].dt.time >= pd.to_datetime('07:30').time()) &
-                             (day_df['timestamp_ny'].dt.time <= pd.to_datetime('11:00').time())]
-            if session.empty:
-                continue
-            entry_idx = None
-            for idx, row in session.iterrows():
-                if direction == 'SELL' and row['high'] >= entry_level:
-                    entry_idx = idx
-                    break
-                elif direction == 'BUY' and row['low'] <= entry_level:
-                    entry_idx = idx
-                    break
-            if entry_idx is None:
-                continue
-            entry_row = session.loc[entry_idx]
-            entry_price = entry_level
-            after_entry = session.loc[entry_idx:]
-            tp = None
-            for _, r in after_entry.iterrows():
-                if direction == 'SELL' and r['low'] < entry_price:
-                    tp = r['low']
-                    break
-                elif direction == 'BUY' and r['high'] > entry_price:
-                    tp = r['high']
-                    break
-            if tp is None:
-                continue
-            # Filtro: solo operar si el TP está al menos a 0.1% del precio de entrada
-            min_target_pct = 0.001  # 0.1%
-            target_dist = abs(tp - entry_price) / entry_price
-            if target_dist < min_target_pct:
-                continue
-            # Primer trade
-            trades_today = 1
-            # El trade se ejecuta aquí, calcular pnl y agregarlo
-            # ...existing code for pnl and commission...
-            first_trade_win = False
-            if 'pnl' in locals():
+            # Procesar dos sesiones: Europa (EU) y Nueva York (NY)
+            sessions = [
+                ('EU', '01:00', '02:00', '02:00', '06:00'),  # Europa
+                ('NY', '06:45', '07:30', '07:30', '11:00')   # Nueva York
+            ]
+            
+            for session_name, pre_start, pre_end, sess_start, sess_end in sessions:
+                pre_session = day_df[(day_df['timestamp_ny'].dt.time >= pd.to_datetime(pre_start).time()) &
+                                     (day_df['timestamp_ny'].dt.time <= pd.to_datetime(pre_end).time())]
+                if pre_session.empty:
+                    continue
+                last_candle = pre_session.iloc[-1]
+                is_bullish = last_candle['close'] > last_candle['open']
+                is_bearish = last_candle['close'] < last_candle['open']
+                if is_bearish:
+                    entry_level = last_candle['low']
+                    sl = last_candle['high'] + 0.0003
+                    direction = 'SELL'
+                elif is_bullish:
+                    entry_level = last_candle['high']
+                    sl = last_candle['low'] - 0.0003
+                    direction = 'BUY'
+                else:
+                    continue
+                session = day_df[(day_df['timestamp_ny'].dt.time >= pd.to_datetime(sess_start).time()) &
+                                 (day_df['timestamp_ny'].dt.time <= pd.to_datetime(sess_end).time())]
+                if session.empty:
+                    continue
+                entry_idx = None
+                for idx, row in session.iterrows():
+                    if direction == 'SELL' and row['high'] >= entry_level:
+                        entry_idx = idx
+                        break
+                    elif direction == 'BUY' and row['low'] <= entry_level:
+                        entry_idx = idx
+                        break
+                if entry_idx is None:
+                    continue
+                entry_row = session.loc[entry_idx]
+                entry_price = entry_level
+                after_entry = session.loc[entry_idx:]
+                tp = None
+                for _, r in after_entry.iterrows():
+                    if direction == 'SELL' and r['low'] < entry_price:
+                        tp = r['low']
+                        break
+                    elif direction == 'BUY' and r['high'] > entry_price:
+                        tp = r['high']
+                        break
+                if tp is None:
+                    continue
+                # Filtro: solo operar si el TP está al menos a 0.2% del precio de entrada
+                min_target_pct = 0.001  # 0.1%
+                target_dist = abs(tp - entry_price) / entry_price
+                if target_dist < min_target_pct:
+                    continue
+                # Primer trade
+                trades_today = 1
+                # El trade se ejecuta aquí, calcular pnl y agregarlo
+                risk_amount = self.capital * self.risk_per_trade
+                # El apalancamiento solo afecta el margen requerido, no el tamaño de la posición para la comisión
+                size = risk_amount / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+                commission_rate = 0.0004  # 0.04% por trade (solo apertura)
+                if direction == 'SELL':
+                    sl_hit = any(r['high'] >= sl for _, r in after_entry.iterrows())
+                    tp_hit = any(r['low'] <= tp for _, r in after_entry.iterrows())
+                    pnl = (entry_price - tp) * size if tp_hit and (not sl_hit or after_entry[after_entry['low'] <= tp].index[0] < after_entry[after_entry['high'] >= sl].index[0]) else (sl - entry_price) * size * -1
+                else:
+                    sl_hit = any(r['low'] <= sl for _, r in after_entry.iterrows())
+                    tp_hit = any(r['high'] >= tp for _, r in after_entry.iterrows())
+                    pnl = (tp - entry_price) * size if tp_hit and (not sl_hit or after_entry[after_entry['high'] >= tp].index[0] < after_entry[after_entry['low'] <= sl].index[0]) else (entry_price - sl) * size * -1
+                commission = abs(size * entry_price * commission_rate)
+                pnl -= commission
+                results.append({
+                    'date': day,
+                    'session': session_name,
+                    'direction': direction,
+                    'entry': entry_price,
+                    'sl': sl,
+                    'tp': tp,
+                    'pnl': pnl,
+                    'commission': commission
+                })
                 first_trade_win = pnl > 0
-            # Segundo trade solo si el primero fue ganador
-            if first_trade_win:
-                entry_idx2 = None
-                for idx2, row2 in after_entry.iloc[1:].iterrows():
-                    if direction == 'SELL' and row2['high'] >= entry_price:
-                        entry_idx2 = idx2
-                        break
-                    elif direction == 'BUY' and row2['low'] <= entry_price:
-                        entry_idx2 = idx2
-                        break
-                if entry_idx2 is not None:
-                    entry_row2 = after_entry.loc[entry_idx2]
-                    entry_price2 = entry_price
-                    after_entry2 = after_entry.iloc[entry_idx2:]
-                    tp2 = None
-                    for _, r2 in after_entry2.iterrows():
-                        if direction == 'SELL' and r2['low'] < entry_price2:
-                            tp2 = r2['low']
+                # Segundo trade solo si el primero fue ganador
+                if first_trade_win:
+                    entry_idx2 = None
+                    for idx2, row2 in after_entry.iloc[1:].iterrows():
+                        if direction == 'SELL' and row2['high'] >= entry_price:
+                            entry_idx2 = idx2
                             break
-                        elif direction == 'BUY' and r2['high'] > entry_price2:
-                            tp2 = r2['high']
+                        elif direction == 'BUY' and row2['low'] <= entry_price:
+                            entry_idx2 = idx2
                             break
-                    if tp2 is not None:
-                        target_dist2 = abs(tp2 - entry_price2) / entry_price2
-                        if target_dist2 >= min_target_pct:
-                            risk_amount2 = self.capital * self.risk_per_trade
-                            size2 = risk_amount2 / abs(entry_price2 - sl) if abs(entry_price2 - sl) > 0 else 0
-                            commission2 = abs(size2 * entry_price2 * 0.0004)
-                            if direction == 'SELL':
-                                sl_hit2 = any(r2['high'] >= sl for _, r2 in after_entry2.iterrows())
-                                tp_hit2 = any(r2['low'] <= tp2 for _, r2 in after_entry2.iterrows())
-                                pnl2 = (entry_price2 - tp2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['low'] <= tp2].index[0] < after_entry2[after_entry2['high'] >= sl].index[0]) else (sl - entry_price2) * size2 * -1
-                            else:
-                                sl_hit2 = any(r2['low'] <= sl for _, r2 in after_entry2.iterrows())
-                                tp_hit2 = any(r2['high'] >= tp2 for _, r2 in after_entry2.iterrows())
-                                pnl2 = (tp2 - entry_price2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['high'] >= tp2].index[0] < after_entry2[after_entry2['low'] <= sl].index[0]) else (entry_price2 - sl) * size2 * -1
-                            pnl2 -= commission2
-                            results.append({
-                                'date': day,
-                                'direction': direction,
-                                'entry': entry_price2,
-                                'sl': sl,
-                                'tp': tp2,
-                                'pnl': pnl2,
-                                'commission': commission2
-                            })
-            risk_amount = self.capital * self.risk_per_trade
-            # El apalancamiento solo afecta el margen requerido, no el tamaño de la posición para la comisión
-            size = risk_amount / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
-            commission_rate = 0.0004  # 0.04% por trade (solo apertura)
-            if direction == 'SELL':
-                sl_hit = any(r['high'] >= sl for _, r in after_entry.iterrows())
-                tp_hit = any(r['low'] <= tp for _, r in after_entry.iterrows())
-                pnl = (entry_price - tp) * size if tp_hit and (not sl_hit or after_entry[after_entry['low'] <= tp].index[0] < after_entry[after_entry['high'] >= sl].index[0]) else (sl - entry_price) * size * -1
-            else:
-                sl_hit = any(r['low'] <= sl for _, r in after_entry.iterrows())
-                tp_hit = any(r['high'] >= tp for _, r in after_entry.iterrows())
-                pnl = (tp - entry_price) * size if tp_hit and (not sl_hit or after_entry[after_entry['high'] >= tp].index[0] < after_entry[after_entry['low'] <= sl].index[0]) else (entry_price - sl) * size * -1
-            commission = abs(size * entry_price * commission_rate)
-            pnl -= commission
-            results.append({
-                'date': day,
-                'direction': direction,
-                'entry': entry_price,
-                'sl': sl,
-                'tp': tp,
-                'pnl': pnl,
-                'commission': commission
-            })
+                    if entry_idx2 is not None:
+                        entry_row2 = after_entry.loc[entry_idx2]
+                        entry_price2 = entry_price
+                        after_entry2 = after_entry.loc[entry_idx2:]
+                        tp2 = None
+                        for _, r2 in after_entry2.iterrows():
+                            if direction == 'SELL' and r2['low'] < entry_price2:
+                                tp2 = r2['low']
+                                break
+                            elif direction == 'BUY' and r2['high'] > entry_price2:
+                                tp2 = r2['high']
+                                break
+                        if tp2 is not None:
+                            target_dist2 = abs(tp2 - entry_price2) / entry_price2
+                            if target_dist2 >= min_target_pct:
+                                risk_amount2 = self.capital * self.risk_per_trade
+                                size2 = risk_amount2 / abs(entry_price2 - sl) if abs(entry_price2 - sl) > 0 else 0
+                                commission2 = abs(size2 * entry_price2 * 0.0004)
+                                if direction == 'SELL':
+                                    sl_hit2 = any(r2['high'] >= sl for _, r2 in after_entry2.iterrows())
+                                    tp_hit2 = any(r2['low'] <= tp2 for _, r2 in after_entry2.iterrows())
+                                    pnl2 = (entry_price2 - tp2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['low'] <= tp2].index[0] < after_entry2[after_entry2['high'] >= sl].index[0]) else (sl - entry_price2) * size2 * -1
+                                else:
+                                    sl_hit2 = any(r2['low'] <= sl for _, r2 in after_entry2.iterrows())
+                                    tp_hit2 = any(r2['high'] >= tp2 for _, r2 in after_entry2.iterrows())
+                                    pnl2 = (tp2 - entry_price2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['high'] >= tp2].index[0] < after_entry2[after_entry2['low'] <= sl].index[0]) else (entry_price2 - sl) * size2 * -1
+                                pnl2 -= commission2
+                                results.append({
+                                    'date': day,
+                                    'session': session_name,
+                                    'direction': direction,
+                                    'entry': entry_price2,
+                                    'sl': sl,
+                                    'tp': tp2,
+                                    'pnl': pnl2,
+                                    'commission': commission2
+                                })
         results_df = pd.DataFrame(results)
         # Estadísticas y gráficos
         if not results_df.empty:
@@ -167,9 +173,12 @@ class NYOrderBlockBot:
             results_df['month'] = results_df['date'].dt.to_period('M')
             yearly = results_df.groupby('year')['pnl'].sum() / self.initial_capital * 100
             monthly = results_df.groupby('month')['pnl'].sum() / self.initial_capital * 100
-            print(f"Total trades: {len(results_df)} | Ganancia total: {results_df['pnl'].sum():.2f}")
+            total_pnl_pct = results_df['pnl'].sum() / self.initial_capital * 100
+            best_trade_pct = best_trade / self.initial_capital * 100
+            worst_trade_pct = worst_trade / self.initial_capital * 100
+            print(f"Total trades: {len(results_df)} | Ganancia total: {total_pnl_pct:.2f}%")
             print(f"Winrate: {winrate:.2f}% | Profit Factor: {profit_factor:.2f} | Max Drawdown: {max_drawdown:.2f}%")
-            print(f"Mejor Trade: {best_trade:.2f} | Peor Trade: {worst_trade:.2f}")
+            print(f"Mejor Trade: {best_trade_pct:.2f}% | Peor Trade: {worst_trade_pct:.2f}%")
             print("\n% Ganancia por año:")
             print(yearly)
             print("\n% Ganancia por mes:")
