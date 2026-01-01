@@ -15,8 +15,38 @@ class NYOrderBlockBot:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['timestamp_ny'] = df['timestamp'] + pd.Timedelta(hours=self.tz_offset)
         df['date'] = df['timestamp_ny'].dt.date
+        
+        # Preparar datos 1h para filtro de tendencia
+        trend_data = {}
+        if df_1h is not None:
+            df_1h = df_1h.copy()
+            df_1h['timestamp'] = pd.to_datetime(df_1h['timestamp'])
+            df_1h['timestamp_ny'] = df_1h['timestamp'] + pd.Timedelta(hours=self.tz_offset)
+            df_1h['ema20'] = df_1h['close'].ewm(span=20, adjust=False).mean()
+            df_1h['ema50'] = df_1h['close'].ewm(span=50, adjust=False).mean()
+            # Calcular ATR para filtro de volatilidad
+            df_1h['tr'] = df_1h[['high', 'low', 'close']].apply(
+                lambda x: max(x['high'] - x['low'], 
+                             abs(x['high'] - x['close']), 
+                             abs(x['low'] - x['close'])), axis=1)
+            df_1h['atr'] = df_1h['tr'].rolling(window=14).mean()
+            df_1h['atr_pct'] = (df_1h['atr'] / df_1h['close']) * 100  # ATR en %
+            # Crear diccionario para lookup rápido
+            for _, row in df_1h.iterrows():
+                trend_data[row['timestamp_ny']] = {
+                    'bullish': row['close'] > row['ema20'] and row['ema20'] > row['ema50'],
+                    'bearish': row['close'] < row['ema20'] and row['ema20'] < row['ema50'],
+                    'atr_pct': row['atr_pct'] if pd.notna(row['atr_pct']) else 0
+                }
+        
         results = []
+        min_capital_threshold = self.initial_capital * 0.5  # Circuit breaker al 50%
+        
         for day, day_df in df.groupby('date'):
+            # Circuit breaker: parar si el capital cae por debajo del 50%
+            if self.capital < min_capital_threshold:
+                print(f"\n⚠️ Circuit breaker activado en {day}: Capital {self.capital:.2f} < {min_capital_threshold:.2f}")
+                break
             # Procesar dos sesiones: Europa (EU) y Nueva York (NY)
             sessions = [
                 ('EU', '01:00', '02:00', '02:00', '06:00'),  # Europa
@@ -29,15 +59,58 @@ class NYOrderBlockBot:
                 if pre_session.empty:
                     continue
                 last_candle = pre_session.iloc[-1]
+                
+                # Filtro de tamaño mínimo de vela (al menos 0.15% de rango)
+                candle_range = abs(last_candle['high'] - last_candle['low']) / last_candle['close']
+                if candle_range < 0.0015:  # 0.15%
+                    continue
+                
                 is_bullish = last_candle['close'] > last_candle['open']
                 is_bearish = last_candle['close'] < last_candle['open']
+                
+                # Filtro de momentum: solo velas con cuerpo decente (al menos 50% del rango)
+                candle_body = abs(last_candle['close'] - last_candle['open'])
+                candle_range_val = last_candle['high'] - last_candle['low']
+                if candle_range_val == 0 or (candle_body / candle_range_val) < 0.5:
+                    continue
+                
+                # Filtro de tendencia 1h: solo operar a favor
+                if df_1h is not None and len(trend_data) > 0:
+                    closest_time = None
+                    for ts in trend_data.keys():
+                        if ts <= last_candle['timestamp_ny']:
+                            if closest_time is None or ts > closest_time:
+                                closest_time = ts
+                    if closest_time and closest_time in trend_data:
+                        trend_info = trend_data[closest_time]
+                        # Solo SELL en tendencia bajista, solo BUY en tendencia alcista
+                        if is_bearish and not trend_info['bearish']:
+                            continue
+                        if is_bullish and not trend_info['bullish']:
+                            continue
+                    closest_time = None
+                    min_diff = float('inf')
+                    for ts in trend_data.keys():
+                        diff = abs((last_candle['timestamp_ny'] - ts).total_seconds())
+                        if diff < min_diff:
+                            min_diff = diff
+                            closest_time = ts
+                    
+                    if closest_time and min_diff < 3600:  # Máximo 1 hora de diferencia
+                        trend = trend_data[closest_time]
+                        # Solo operar si la tendencia coincide con la dirección
+                        if is_bullish and not trend['bullish']:
+                            continue
+                        if is_bearish and not trend['bearish']:
+                            continue
+                
                 if is_bearish:
                     entry_level = last_candle['low']
-                    sl = last_candle['high'] + 0.0003
+                    sl = last_candle['high'] + 0.001
                     direction = 'SELL'
                 elif is_bullish:
                     entry_level = last_candle['high']
-                    sl = last_candle['low'] - 0.0003
+                    sl = last_candle['low'] - 0.001
                     direction = 'BUY'
                 else:
                     continue
@@ -58,21 +131,13 @@ class NYOrderBlockBot:
                 entry_row = session.loc[entry_idx]
                 entry_price = entry_level
                 after_entry = session.loc[entry_idx:]
-                tp = None
-                for _, r in after_entry.iterrows():
-                    if direction == 'SELL' and r['low'] < entry_price:
-                        tp = r['low']
-                        break
-                    elif direction == 'BUY' and r['high'] > entry_price:
-                        tp = r['high']
-                        break
-                if tp is None:
-                    continue
-                # Filtro: solo operar si el TP está al menos a 0.2% del precio de entrada
-                min_target_pct = 0.001  # 0.1%
-                target_dist = abs(tp - entry_price) / entry_price
-                if target_dist < min_target_pct:
-                    continue
+                
+                # Calcular TP como ratio fijo del riesgo (1:1 risk-reward)
+                risk = abs(entry_price - sl)
+                if direction == 'SELL':
+                    tp = entry_price - risk
+                else:  # BUY
+                    tp = entry_price + risk
                 # Primer trade
                 trades_today = 1
                 # El trade se ejecuta aquí, calcular pnl y agregarlo
@@ -81,15 +146,33 @@ class NYOrderBlockBot:
                 size = risk_amount / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
                 commission_rate = 0.0004  # 0.04% por trade (solo apertura)
                 if direction == 'SELL':
-                    sl_hit = any(r['high'] >= sl for _, r in after_entry.iterrows())
-                    tp_hit = any(r['low'] <= tp for _, r in after_entry.iterrows())
-                    pnl = (entry_price - tp) * size if tp_hit and (not sl_hit or after_entry[after_entry['low'] <= tp].index[0] < after_entry[after_entry['high'] >= sl].index[0]) else (sl - entry_price) * size * -1
+                    sl_hit = (after_entry['high'] >= sl).any()
+                    tp_hit = (after_entry['low'] <= tp).any()
+                    if tp_hit and sl_hit:
+                        tp_idx = after_entry[after_entry['low'] <= tp].index[0]
+                        sl_idx = after_entry[after_entry['high'] >= sl].index[0]
+                        pnl = (entry_price - tp) * size if tp_idx < sl_idx else (sl - entry_price) * size * -1
+                    elif tp_hit:
+                        pnl = (entry_price - tp) * size
+                    else:
+                        pnl = (sl - entry_price) * size * -1
                 else:
-                    sl_hit = any(r['low'] <= sl for _, r in after_entry.iterrows())
-                    tp_hit = any(r['high'] >= tp for _, r in after_entry.iterrows())
-                    pnl = (tp - entry_price) * size if tp_hit and (not sl_hit or after_entry[after_entry['high'] >= tp].index[0] < after_entry[after_entry['low'] <= sl].index[0]) else (entry_price - sl) * size * -1
+                    sl_hit = (after_entry['low'] <= sl).any()
+                    tp_hit = (after_entry['high'] >= tp).any()
+                    if tp_hit and sl_hit:
+                        tp_idx = after_entry[after_entry['high'] >= tp].index[0]
+                        sl_idx = after_entry[after_entry['low'] <= sl].index[0]
+                        pnl = (tp - entry_price) * size if tp_idx < sl_idx else (entry_price - sl) * size * -1
+                    elif tp_hit:
+                        pnl = (tp - entry_price) * size
+                    else:
+                        pnl = (entry_price - sl) * size * -1
                 commission = abs(size * entry_price * commission_rate)
                 pnl -= commission
+                
+                # Actualizar capital con el resultado del trade
+                self.capital += pnl
+                
                 results.append({
                     'date': day,
                     'session': session_name,
@@ -98,7 +181,8 @@ class NYOrderBlockBot:
                     'sl': sl,
                     'tp': tp,
                     'pnl': pnl,
-                    'commission': commission
+                    'commission': commission,
+                    'capital': self.capital
                 })
                 first_trade_win = pnl > 0
                 # Segundo trade solo si el primero fue ganador
@@ -115,39 +199,55 @@ class NYOrderBlockBot:
                         entry_row2 = after_entry.loc[entry_idx2]
                         entry_price2 = entry_price
                         after_entry2 = after_entry.loc[entry_idx2:]
-                        tp2 = None
-                        for _, r2 in after_entry2.iterrows():
-                            if direction == 'SELL' and r2['low'] < entry_price2:
-                                tp2 = r2['low']
-                                break
-                            elif direction == 'BUY' and r2['high'] > entry_price2:
-                                tp2 = r2['high']
-                                break
-                        if tp2 is not None:
-                            target_dist2 = abs(tp2 - entry_price2) / entry_price2
-                            if target_dist2 >= min_target_pct:
-                                risk_amount2 = self.capital * self.risk_per_trade
-                                size2 = risk_amount2 / abs(entry_price2 - sl) if abs(entry_price2 - sl) > 0 else 0
-                                commission2 = abs(size2 * entry_price2 * 0.0004)
-                                if direction == 'SELL':
-                                    sl_hit2 = any(r2['high'] >= sl for _, r2 in after_entry2.iterrows())
-                                    tp_hit2 = any(r2['low'] <= tp2 for _, r2 in after_entry2.iterrows())
-                                    pnl2 = (entry_price2 - tp2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['low'] <= tp2].index[0] < after_entry2[after_entry2['high'] >= sl].index[0]) else (sl - entry_price2) * size2 * -1
-                                else:
-                                    sl_hit2 = any(r2['low'] <= sl for _, r2 in after_entry2.iterrows())
-                                    tp_hit2 = any(r2['high'] >= tp2 for _, r2 in after_entry2.iterrows())
-                                    pnl2 = (tp2 - entry_price2) * size2 if tp_hit2 and (not sl_hit2 or after_entry2[after_entry2['high'] >= tp2].index[0] < after_entry2[after_entry2['low'] <= sl].index[0]) else (entry_price2 - sl) * size2 * -1
-                                pnl2 -= commission2
-                                results.append({
-                                    'date': day,
-                                    'session': session_name,
-                                    'direction': direction,
-                                    'entry': entry_price2,
-                                    'sl': sl,
-                                    'tp': tp2,
-                                    'pnl': pnl2,
-                                    'commission': commission2
-                                })
+                        
+                        # TP fijo 1:1 para segundo trade también
+                        risk2 = abs(entry_price2 - sl)
+                        if direction == 'SELL':
+                            tp2 = entry_price2 - risk2
+                        else:  # BUY
+                            tp2 = entry_price2 + risk2
+                        
+                        risk_amount2 = self.capital * self.risk_per_trade
+                        size2 = risk_amount2 / abs(entry_price2 - sl) if abs(entry_price2 - sl) > 0 else 0
+                        commission2 = abs(size2 * entry_price2 * 0.0004)
+                        if direction == 'SELL':
+                            sl_hit2 = (after_entry2['high'] >= sl).any()
+                            tp_hit2 = (after_entry2['low'] <= tp2).any()
+                            if tp_hit2 and sl_hit2:
+                                tp_idx2 = after_entry2[after_entry2['low'] <= tp2].index[0]
+                                sl_idx2 = after_entry2[after_entry2['high'] >= sl].index[0]
+                                pnl2 = (entry_price2 - tp2) * size2 if tp_idx2 < sl_idx2 else (sl - entry_price2) * size2 * -1
+                            elif tp_hit2:
+                                pnl2 = (entry_price2 - tp2) * size2
+                            else:
+                                pnl2 = (sl - entry_price2) * size2 * -1
+                        else:
+                            sl_hit2 = (after_entry2['low'] <= sl).any()
+                            tp_hit2 = (after_entry2['high'] >= tp2).any()
+                            if tp_hit2 and sl_hit2:
+                                tp_idx2 = after_entry2[after_entry2['high'] >= tp2].index[0]
+                                sl_idx2 = after_entry2[after_entry2['low'] <= sl].index[0]
+                                pnl2 = (tp2 - entry_price2) * size2 if tp_idx2 < sl_idx2 else (entry_price2 - sl) * size2 * -1
+                            elif tp_hit2:
+                                pnl2 = (tp2 - entry_price2) * size2
+                            else:
+                                pnl2 = (entry_price2 - sl) * size2 * -1
+                        pnl2 -= commission2
+                        
+                        # Actualizar capital con el resultado del segundo trade
+                        self.capital += pnl2
+                        
+                        results.append({
+                            'date': day,
+                            'session': session_name,
+                            'direction': direction,
+                            'entry': entry_price2,
+                            'sl': sl,
+                            'tp': tp2,
+                            'pnl': pnl2,
+                            'commission': commission2,
+                            'capital': self.capital
+                        })
         results_df = pd.DataFrame(results)
         # Estadísticas y gráficos
         if not results_df.empty:
