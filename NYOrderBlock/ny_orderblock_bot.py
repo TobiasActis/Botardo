@@ -24,19 +24,11 @@ class NYOrderBlockBot:
             df_1h['timestamp_ny'] = df_1h['timestamp'] + pd.Timedelta(hours=self.tz_offset)
             df_1h['ema20'] = df_1h['close'].ewm(span=20, adjust=False).mean()
             df_1h['ema50'] = df_1h['close'].ewm(span=50, adjust=False).mean()
-            # Calcular ATR para filtro de volatilidad
-            df_1h['tr'] = df_1h[['high', 'low', 'close']].apply(
-                lambda x: max(x['high'] - x['low'], 
-                             abs(x['high'] - x['close']), 
-                             abs(x['low'] - x['close'])), axis=1)
-            df_1h['atr'] = df_1h['tr'].rolling(window=14).mean()
-            df_1h['atr_pct'] = (df_1h['atr'] / df_1h['close']) * 100  # ATR en %
             # Crear diccionario para lookup rápido
             for _, row in df_1h.iterrows():
                 trend_data[row['timestamp_ny']] = {
                     'bullish': row['close'] > row['ema20'] and row['ema20'] > row['ema50'],
-                    'bearish': row['close'] < row['ema20'] and row['ema20'] < row['ema50'],
-                    'atr_pct': row['atr_pct'] if pd.notna(row['atr_pct']) else 0
+                    'bearish': row['close'] < row['ema20'] and row['ema20'] < row['ema50']
                 }
         
         results = []
@@ -47,6 +39,7 @@ class NYOrderBlockBot:
             if self.capital < min_capital_threshold:
                 print(f"\n⚠️ Circuit breaker activado en {day}: Capital {self.capital:.2f} < {min_capital_threshold:.2f}")
                 break
+            
             # Procesar dos sesiones: Europa (EU) y Nueva York (NY)
             sessions = [
                 ('EU', '01:00', '02:00', '02:00', '06:00'),  # Europa
@@ -140,8 +133,13 @@ class NYOrderBlockBot:
                     tp = entry_price + risk
                 # Primer trade
                 trades_today = 1
-                # El trade se ejecuta aquí, calcular pnl y agregarlo
-                risk_amount = self.capital * self.risk_per_trade
+                # RISK DINÁMICO: NY=2%, EU=1% (base)
+                base_risk_ny = self.risk_per_trade  # 2% base
+                base_risk_eu = self.risk_per_trade * 0.5  # 1% base
+                
+                # Aplicar risk según sesión
+                session_risk = base_risk_ny if session_name == 'NY' else base_risk_eu
+                risk_amount = self.capital * session_risk
                 # El apalancamiento solo afecta el margen requerido, no el tamaño de la posición para la comisión
                 size = risk_amount / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
                 commission_rate = 0.0004  # 0.04% por trade (solo apertura)
